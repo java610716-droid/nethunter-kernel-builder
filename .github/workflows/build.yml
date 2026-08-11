@@ -31,6 +31,13 @@ jobs:
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
           git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
 
+      - name: Patch Yylloc DTC Host Compile Error
+        run: |
+          cd workspace/kernel
+          # Fix modern GCC host linking issue on scripts/dtc/dtc-lexer.lex.c_shipped
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
+          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
+
       - name: Compile Kernel
         run: |
           cd workspace/kernel
@@ -38,7 +45,6 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Toolchain environment variables
           export GCC64_DIR=$(pwd)/../gcc64/bin/aarch64-linux-android-
           export GCC32_DIR=$(pwd)/../gcc32/bin/arm-linux-androideabi-
           
@@ -46,7 +52,6 @@ jobs:
           export CROSS_COMPILE_ARM32=$GCC32_DIR
           export CROSS_COMPILE_COMPAT=$GCC32_DIR
           
-          # Configure and compile
           make RMX2020_defconfig
           make -j$(nproc --all)
 
