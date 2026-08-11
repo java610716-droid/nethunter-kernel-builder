@@ -1,10 +1,52 @@
-- name: Disable Broken Kernel Features
+name: Build NetHunter Kernel (Docker)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu:18.04
+
+    steps:
+      - name: Install Build Dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev liblz4-tool zip ccache
+
+      - name: Download Source & Proton Clang
+        run: |
+          mkdir workspace
+          cd workspace
+          
+          # Clone RMX2020 kernel source
+          git clone -b sixteen-qpr2 --depth=1 https://github.com/sarthakroy2002/kernel_realme_RMX2020.git kernel
+          
+          # Clone Proton Clang (Runs natively on Ubuntu 18.04)
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
+
+      - name: Compile Kernel
         run: |
           cd workspace/kernel
-          # Generate base config
-          make O=out ARCH=arm64 RMX2020_defconfig
           
-          # Disable problematic features causing build breaks
-          scripts/config --file out/.config --disable CONFIG_UIFIRST
-          scripts/config --file out/.config --disable CONFIG_UIFIRST_SCHED
-          scripts/config --file out/.config --disable CONFIG_OPPO_HEALTHINFO
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH="$(pwd)/../clang/bin:${PATH}"
+          
+          export CC=clang
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          
+          make RMX2020_defconfig
+          make -j$(nproc)
+
+      - name: Upload Output Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Compiled-Kernel-RMX2020
+          path: |
+            workspace/kernel/arch/arm64/boot/Image.gz*
+            workspace/kernel/arch/arm64/boot/Image*
