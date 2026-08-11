@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04  # Uses Ubuntu 20.04 to prevent host compiler syntax breaks on older kernel scripts
+    runs-on: ubuntu-latest
 
     steps:
       - name: Maximize Build Space
@@ -38,7 +38,7 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           
-          # Absolute paths for GCC toolchains
+          # Toolchain environment variables
           export GCC64_DIR=$(pwd)/../gcc64/bin/aarch64-linux-android-
           export GCC32_DIR=$(pwd)/../gcc32/bin/arm-linux-androideabi-
           
@@ -46,14 +46,14 @@ jobs:
           export CROSS_COMPILE_ARM32=$GCC32_DIR
           export CROSS_COMPILE_COMPAT=$GCC32_DIR
           
-          # Configure and build
-          make O=out RMX2020_defconfig
-          make -j$(nproc --all) O=out
+          # Configure and compile
+          make RMX2020_defconfig
+          make -j$(nproc --all)
 
       - name: Upload Output Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Compiled-Kernel
           path: |
-            workspace/kernel/out/arch/arm64/boot/Image.gz*
-            workspace/kernel/out/arch/arm64/boot/Image*
+            workspace/kernel/arch/arm64/boot/Image.gz*
+            workspace/kernel/arch/arm64/boot/Image*
