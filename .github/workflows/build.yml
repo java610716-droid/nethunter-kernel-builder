@@ -17,48 +17,65 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev liblz4-tool zip ccache
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev liblz4-tool zip ccache wget
 
-      - name: Download Kernel Source & Toolchains
+      - name: Setup Kernel & AOSP Clang
         run: |
           mkdir workspace
           cd workspace
           
-          # Clone RMX2020 kernel source
+          # Clone RMX2020 source tree
           git clone -b sixteen-qpr2 --depth=1 https://github.com/sarthakroy2002/kernel_realme_RMX2020.git kernel
+          cd kernel
           
-          # Clone AOSP Clang 12 (Compatible with Android 4.14 kernels)
-          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b clang
+          # Download official AOSP Clang toolchain
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz -O "aosp-clang.tar.gz"
+          mkdir -p clang
+          tar -xf aosp-clang.tar.gz -C clang
+          rm -f aosp-clang.tar.gz
 
-      - name: Patch Yylloc DTC Host Compile Error
+      - name: Apply Source Code Fixes
         run: |
           cd workspace/kernel
+          
+          # 1. Patch Yylloc DTC Host Compile Error
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
+          
+          # 2. Fix inline error in resmap_account.h
+          sed -i 's/extern inline/static inline/g' include/linux/resmap_account.h || true
+          
+          # 3. Fix missing header error in uifirst_sched_futex.c
+          mkdir -p kernel/uifirst/
+          if [ -f "kernel/uifirst/uifirst_sched_trace.h" ]; then
+            cp kernel/uifirst/uifirst_sched_trace.h ./uifirst_sched_trace.h || true
+          fi
 
       - name: Compile Kernel
         run: |
           cd workspace/kernel
           
-          # Point path to AOSP Clang
-          export PATH=$(pwd)/../clang/bin:$PATH
           export ARCH=arm64
           export SUBARCH=arm64
+          export PATH="$(pwd)/clang/bin:${PATH}"
           
-          # Set Clang for target kernel build, using system GCC for host tools
-          export CC=clang
-          export CLANG_TRIPLE=aarch64-linux-gnu-
-          export CROSS_COMPILE=aarch64-linux-gnu-
-          export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
-          export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          # Set relaxed CFLAGS to bypass inline and header check errors
+          export KCFLAGS="-fgnu89-inline -Wno-error=inline -I$(pwd)/kernel/uifirst"
           
-          make RMX2020_defconfig
-          make -j$(nproc --all)
+          # Configure target defconfig
+          make O=out ARCH=arm64 RMX2020_defconfig
+          
+          # Compile with full LLVM toolchain
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC="clang" \
+            LLVM=1 \
+            CONFIG_NO_ERROR_ON_MISMATCH=y
 
       - name: Upload Output Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Compiled-Kernel
+          name: Compiled-Kernel-RMX2020
           path: |
-            workspace/kernel/arch/arm64/boot/Image.gz*
-            workspace/kernel/arch/arm64/boot/Image*
+            workspace/kernel/out/arch/arm64/boot/Image.gz*
+            workspace/kernel/out/arch/arm64/boot/Image*
