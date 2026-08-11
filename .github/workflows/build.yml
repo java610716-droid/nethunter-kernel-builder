@@ -1,81 +1,10 @@
-name: Build NetHunter Kernel
-
-on:
-  workflow_dispatch:
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Maximize Build Space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-
-      - name: Install Build Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev liblz4-tool zip ccache wget
-
-      - name: Setup Kernel & AOSP Clang
-        run: |
-          mkdir workspace
-          cd workspace
-          
-          # Clone RMX2020 source tree
-          git clone -b sixteen-qpr2 --depth=1 https://github.com/sarthakroy2002/kernel_realme_RMX2020.git kernel
-          cd kernel
-          
-          # Download official AOSP Clang toolchain
-          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r498229b.tar.gz -O "aosp-clang.tar.gz"
-          mkdir -p clang
-          tar -xf aosp-clang.tar.gz -C clang
-          rm -f aosp-clang.tar.gz
-
-      - name: Apply Source Code Fixes
+- name: Disable Broken Kernel Features
         run: |
           cd workspace/kernel
-          
-          # 1. Patch Yylloc DTC Host Compile Error
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
-          sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
-          
-          # 2. Fix inline error in resmap_account.h
-          sed -i 's/extern inline/static inline/g' include/linux/resmap_account.h || true
-          
-          # 3. Fix missing header error in uifirst_sched_futex.c
-          mkdir -p kernel/uifirst/
-          if [ -f "kernel/uifirst/uifirst_sched_trace.h" ]; then
-            cp kernel/uifirst/uifirst_sched_trace.h ./uifirst_sched_trace.h || true
-          fi
-
-      - name: Compile Kernel
-        run: |
-          cd workspace/kernel
-          
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export PATH="$(pwd)/clang/bin:${PATH}"
-          
-          # Set relaxed CFLAGS to bypass inline and header check errors
-          export KCFLAGS="-fgnu89-inline -Wno-error=inline -I$(pwd)/kernel/uifirst"
-          
-          # Configure target defconfig
+          # Generate base config
           make O=out ARCH=arm64 RMX2020_defconfig
           
-          # Compile with full LLVM toolchain
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="clang" \
-            LLVM=1 \
-            CONFIG_NO_ERROR_ON_MISMATCH=y
-
-      - name: Upload Output Kernel Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: Compiled-Kernel-RMX2020
-          path: |
-            workspace/kernel/out/arch/arm64/boot/Image.gz*
-            workspace/kernel/out/arch/arm64/boot/Image*
+          # Disable problematic features causing build breaks
+          scripts/config --file out/.config --disable CONFIG_UIFIRST
+          scripts/config --file out/.config --disable CONFIG_UIFIRST_SCHED
+          scripts/config --file out/.config --disable CONFIG_OPPO_HEALTHINFO
