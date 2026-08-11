@@ -1,7 +1,7 @@
 name: Build NetHunter Kernel
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub web UI
+  workflow_dispatch:
 
 jobs:
   build:
@@ -38,12 +38,15 @@ jobs:
           export ARCH=arm64
           export SUBARCH=arm64
           export CROSS_COMPILE=$(pwd)/../gcc64/bin/aarch64-linux-android-
+          
+          # Export 32-bit compiler path to both variables expected by the kernel Makefile
           export CROSS_COMPILE_ARM32=$(pwd)/../gcc32/bin/arm-linux-androideabi-
+          export CROSS_COMPILE_COMPAT=$(pwd)/../gcc32/bin/arm-linux-androideabi-
           
           # Configure for RMX2020 / RMX3171
           make RMX2020_defconfig
           
-          # Start compilation using all available CPU threads
+          # Start compilation
           make -j$(nproc --all)
 
       - name: Upload Output Kernel Artifact
