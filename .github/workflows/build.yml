@@ -16,7 +16,7 @@ jobs:
           apt-get install -y build-essential bc bison flex libssl-dev libncurses5-dev \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git libelf-dev liblz4-tool zip ccache
 
-      - name: Download Source & Proton Clang
+      - name: Download Source & Toolchain
         run: |
           mkdir workspace
           cd workspace
@@ -24,25 +24,28 @@ jobs:
           # Clone RMX2020 kernel source
           git clone -b sixteen-qpr2 --depth=1 https://github.com/sarthakroy2002/kernel_realme_RMX2020.git kernel
           
-          # Clone Proton Clang
+          # Clone Proton Clang toolchain
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
-      - name: Apply Source Code Fixes
+      - name: Apply DTC Lexer Patch
         run: |
           cd workspace/kernel
-          
-          # 1. Patch Yylloc DTC Host Compile Error
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.lex.c_shipped || true
           sed -i 's/^YYLTYPE yylloc;/extern YYLTYPE yylloc;/' scripts/dtc/dtc-lexer.l || true
+
+      - name: Configure & Disable Broken Vendor Features
+        run: |
+          cd workspace/kernel
+          export ARCH=arm64
           
-          # 2. Fix inline error in resmap_account.h
-          sed -i 's/extern inline/static inline/g' include/linux/resmap_account.h || true
+          # Generate base config
+          make RMX2020_defconfig
           
-          # 3. Create missing header symlink for uifirst trace
-          mkdir -p kernel/uifirst/
-          if [ -f "kernel/uifirst/uifirst_sched_trace.h" ]; then
-            cp kernel/uifirst/uifirst_sched_trace.h ./uifirst_sched_trace.h || true
-          fi
+          # Automatically turn off broken non-essential vendor modules
+          scripts/config --disable CONFIG_UIFIRST
+          scripts/config --disable CONFIG_UIFIRST_SCHED
+          scripts/config --disable CONFIG_OPPO_HEALTHINFO
+          scripts/config --disable CONFIG_RESMAP_ACCOUNT
 
       - name: Compile Kernel
         run: |
@@ -57,9 +60,6 @@ jobs:
           export CROSS_COMPILE_ARM32=arm-linux-gnueabi-
           export CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
           
-          export KCFLAGS="-fgnu89-inline -Wno-error=inline -I$(pwd)/kernel/uifirst"
-          
-          make RMX2020_defconfig
           make -j$(nproc)
 
       - name: Upload Output Kernel Artifact
